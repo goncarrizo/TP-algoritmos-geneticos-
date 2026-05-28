@@ -250,38 +250,15 @@ def imprimir_resultados(num_generaciones, estadisticas):
     print(f"{'Gen':<5} {'Máximo':<12} {'Mínimo':<12} {'Promedio':<12} {'Desv. Est.':<12}")
     print("-" * 55)
     
-    # Mostrar primeras 10 generaciones y últimas 10
+    # Mostrar todas las generaciones (sin resumir)
     total_generaciones = len(estadisticas['generacion'])
-    
-    if total_generaciones <= 20:
-        # Si son menos de 20 generaciones, mostrar todas
-        for i in range(len(estadisticas['generacion'])):
-            gen = estadisticas['generacion'][i]
-            max_a = estadisticas['maxima_aptitud'][i]
-            min_a = estadisticas['minima_aptitud'][i]
-            prom_a = estadisticas['promedio_aptitud'][i]
-            desv_a = estadisticas['desviacion_aptitud'][i]
-            print(f"{gen:<5} {max_a:<12.6f} {min_a:<12.6f} {prom_a:<12.6f} {desv_a:<12.6f}")
-    else:
-        # Mostrar primeras 10
-        for i in range(10):
-            gen = estadisticas['generacion'][i]
-            max_a = estadisticas['maxima_aptitud'][i]
-            min_a = estadisticas['minima_aptitud'][i]
-            prom_a = estadisticas['promedio_aptitud'][i]
-            desv_a = estadisticas['desviacion_aptitud'][i]
-            print(f"{gen:<5} {max_a:<12.6f} {min_a:<12.6f} {prom_a:<12.6f} {desv_a:<12.6f}")
-        
-        print("...")
-        
-        # Mostrar últimas 10
-        for i in range(total_generaciones - 10, total_generaciones):
-            gen = estadisticas['generacion'][i]
-            max_a = estadisticas['maxima_aptitud'][i]
-            min_a = estadisticas['minima_aptitud'][i]
-            prom_a = estadisticas['promedio_aptitud'][i]
-            desv_a = estadisticas['desviacion_aptitud'][i]
-            print(f"{gen:<5} {max_a:<12.6f} {min_a:<12.6f} {prom_a:<12.6f} {desv_a:<12.6f}")
+    for i in range(total_generaciones):
+        gen = estadisticas['generacion'][i]
+        max_a = estadisticas['maxima_aptitud'][i]
+        min_a = estadisticas['minima_aptitud'][i]
+        prom_a = estadisticas['promedio_aptitud'][i]
+        desv_a = estadisticas['desviacion_aptitud'][i]
+        print(f"{gen:<5} {max_a:<12.6f} {min_a:<12.6f} {prom_a:<12.6f} {desv_a:<12.6f}")
     
     return None
 

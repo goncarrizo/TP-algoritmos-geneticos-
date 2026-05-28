@@ -1,0 +1,16 @@
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+dependencies:
+  matplotlib:
+    specifier: ^1.0.0
+    version: 1.0.0
+
+packages:
+
+  /matplotlib@1.0.0:
+    resolution: {integrity: sha512-BiYNXIswoWqkcQ2dT+DbOAy8dR+Gi72rKilabj7x2SMAs8HDHDynvgbIPHHQn3SnR78IBh6rNxhlAbQPEjuwlw==}
+    dev: false
