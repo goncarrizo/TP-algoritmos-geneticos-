@@ -1,11 +1,9 @@
-"""TP2-Unico: Un solo archivo con las 3 soluciones pedidas y un menú.
-
+"""
 Opciones:
 1) Búsqueda exhaustiva (fuerza bruta) y medición de tiempo.
 2) Algoritmo goloso con comparación (si es posible) con la exhaustiva.
-3) Instancia de 3 elementos (pesos en gramos) — ejecutar ambos y analizar.
+3) Instancia de 3 elementos (pesos en gramos) 
 
-Ejecutar: python TP2-Ab/TP2_unico.py
 """
 import itertools
 import time
@@ -56,8 +54,8 @@ def imprimir_subconjunto(subset: List[Dict]) -> str:
 
 
 def run_punto1():
-    print('\n--- Punto 1: Búsqueda exhaustiva (datos fijos de la consigna) ---')
-    # Datos fijos (volumen en cm^3 y valor $) según la imagen proporcionada
+    print('Punto 1: Búsqueda exhaustiva ')
+    # Datos fijos (volumen en cm^3 y valor $)
     elementos = [
         {'name': '1', 'weight': 150, 'value': 20},
         {'name': '2', 'weight': 325, 'value': 40},
@@ -88,8 +86,8 @@ def run_punto1():
 
 
 def run_punto2():
-    print('\n--- Punto 2: Algoritmo goloso (datos fijos) y comparación ---')
-    # Usar los mismos datos fijos que en el punto 1 (tabla de 10 objetos)
+    print('\n--- Punto 2: Algoritmo Greedy y comparación ---')
+    # Usa los mismos datos fijos que en el punto 1 (tabla de 10 objetos)
     elementos = [
         {'name': '1', 'weight': 150, 'value': 20},
         {'name': '2', 'weight': 325, 'value': 40},
@@ -109,20 +107,20 @@ def run_punto2():
         print(f" - {it['name']}: volumen={it['weight']} cm^3, valor=${it['value']}")
 
     elegidos, valor_goloso, tiempo_goloso = mochila_golosa(elementos, capacidad)
-    print('\nResultado (goloso):')
+    print('\nResultado (Greedy):')
     print('  Subconjunto elegido:', imprimir_subconjunto(elegidos))
     print('  Valor total: $', valor_goloso)
-    print(f'  Tiempo (goloso): {tiempo_goloso:.6f} s')
+    print(f'  Tiempo Greedy: {tiempo_goloso:.6f} s')
 
-    # Comparación con exhaustiva (10 elementos -> viable)
+    # Comparación con exhaustiva 
     mejor, valor_exh, tiempo_exh, factibles = mochila_exhaustiva(elementos, capacidad)
     print('\nComparación con exhaustiva:')
     print('  Mejor (exhaustiva):', imprimir_subconjunto(mejor), 'valor=$', valor_exh)
     print(f'  Tiempo (exhaustiva): {tiempo_exh:.6f} s')
     if valor_goloso == valor_exh:
-        print('  Conclusión: el goloso encontró la solución óptima en este caso.')
+        print('  Conclusión: el Greedy encontró la solución óptima en este caso.')
     else:
-        print('  Conclusión: el goloso NO encontró la solución óptima en este caso.')
+        print('  Conclusión: el Greedy NO encontró la solución óptima en este caso.')
         print('  Diferencia en valor:', valor_exh - valor_goloso)
 
 
@@ -148,18 +146,18 @@ def run_punto3():
     print('    Valor total: $', valor_exh)
     print(f'    Tiempo (exhaustiva): {tiempo_exh:.6f} s')
 
-    print('\n  Goloso:')
+    print('\n  Greedy:')
     print('    Subconjunto elegido:', imprimir_subconjunto(elegidos_goloso))
     print('    Valor total: $', valor_goloso)
-    print(f'    Tiempo (goloso): {tiempo_goloso:.6f} s')
+    print(f'    Tiempo (Greedy): {tiempo_goloso:.6f} s')
 
     # B) Análisis y conclusiones
     print('\nB) Análisis y conclusiones')
     if valor_goloso == valor_exh:
-        print('  - El algoritmo goloso encontró la solución óptima en esta instancia.')
+        print('  - El algoritmo Greedy encontró la solución óptima en esta instancia.')
     else:
-        print('  - El algoritmo goloso NO encontró la solución óptima en esta instancia.')
-        print('  - Diferencia en valor (exhaustiva - goloso):', valor_exh - valor_goloso)
+        print('  - El algoritmo Greedy NO encontró la solución óptima en esta instancia.')
+        print('  - Diferencia en valor (exhaustiva - Greedy):', valor_exh - valor_goloso)
 
     print('\nListado de subconjuntos factibles ordenados (valor-desc):')
     for i, (subset, w, v) in enumerate(factibles, start=1):
@@ -169,10 +167,10 @@ def run_punto3():
 
 def main():
     while True:
-        print('\n=== Menú unificado TP2 ===')
+        print('\n=== Menú TP2 ===')
         print('1) Punto 1 - Exhaustiva')
-        print('2) Punto 2 - Goloso y comparación')
-        print('3) Punto 3 - Ejemplo 3 elementos (3000 g)')
+        print('2) Punto 2 - Greedy y comparación')
+        print('3) Punto 3 - Ejemplo 3 elementos')
         print('q) Salir')
         op = input('\nElija opción: ').strip().lower()
         if op == '1':
