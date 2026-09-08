@@ -1,12 +1,9 @@
+import os
 import random
 import numpy as np
 import pandas as pd
 import cv2
-
-# --- OPCIONAL: Importaciones para CLIP, Diffusers y Torch (si se corre en entorno con GPU) ---
-# import torch
-# from transformers import CLIPProcessor, CLIPModel
-# from diffusers import StableDiffusionPipeline
+import matplotlib.pyplot as plt
 
 # ==========================================
 # 1. MÓDULO FRACTAL: BOX-COUNTING Y GAUSSIANA
@@ -17,32 +14,29 @@ def calculate_fractal_dimension(image_array):
     Calcula la dimensión fractal D mediante el método de Box-Counting
     sobre una imagen binarizada con detector de bordes Canny.
     """
-    # 1. Grayscale
     if len(image_array.shape) == 3:
         gray = cv2.cvtColor(image_array, cv2.COLOR_RGB2GRAY)
     else:
         gray = image_array
 
-    # 2. Detección de bordes (Canny)
     edges = cv2.Canny(gray, 100, 200)
     binary = edges > 0
 
-    # 3. Box Counting
-    min_dim = min(binary.shape)
-    # Hallar mayor potencia de 2 menor o igual a min_dim
+    H, W = binary.shape
+    min_dim = min(H, W)
     p = int(np.floor(np.log2(min_dim)))
     sizes = 2**np.arange(p, 1, -1)
 
     counts = []
     for size in sizes:
-        # Redimensionar / contar cajas ocupadas
-        shape = (binary.shape[0] // size, size, binary.shape[1] // size, size)
-        counts.append(np.sum(binary[:shape[0]*size, :shape[1]*size].reshape(shape).any(axis=(1, 3))))
+        nH = H // size
+        nW = W // size
+        grid = binary[:nH * size, :nW * size].reshape(nH, size, nW, size)
+        counts.append(np.sum(grid.any(axis=(1, 3))))
 
     if len(counts) < 2 or np.sum(counts) == 0:
         return 1.0
 
-    # Regresión lineal log-log
     coeffs = np.polyfit(np.log(1.0 / sizes), np.log(counts), 1)
     return float(coeffs[0])
 
@@ -55,7 +49,7 @@ def gaussian_fractal_score(D, D_opt=1.4, sigma=0.3):
 
 
 # ==========================================
-# 2. MÓDULO DE EVALUACIÓN Y FITNEES
+# 2. MÓDULO DE EVALUACIÓN Y FITNESS
 # ==========================================
 
 class Evaluator:
@@ -72,29 +66,24 @@ class Evaluator:
 
     def get_clip_score(self, prompt, image):
         """Sustituir con la llamada real a CLIP model/processor."""
-        # clip_score = clip_model(...)
         return random.uniform(0.6, 0.95)
 
     def get_laion_aesthetic_score(self, image):
         """Sustituir con la llamada real al modelo LAION Aesthetic Predictor."""
-        # Retorna un valor en rango 0.0 - 1.0 (normalizado de 1-10)
         return random.uniform(0.5, 0.9)
 
     def evaluate(self, prompt):
         if prompt in self.cache:
             return self.cache[prompt]
 
-        # 1. Generar imagen (512x512)
         image = self.generate_image_mock(prompt)
 
-        # 2. Métricas
         c_p = self.get_clip_score(prompt, image)
         e_p = self.get_laion_aesthetic_score(image)
         
         D = calculate_fractal_dimension(image)
         f_fractal = gaussian_fractal_score(D)
 
-        # 3. Fitness Global Integrado
         fitness = (self.w1 * c_p) + (self.w2 * e_p) + (self.w3 * f_fractal)
 
         metrics = {
@@ -119,7 +108,6 @@ class GeneticPromptOptimizer:
         self.crossover_rate = crossover_rate
         self.evaluator = Evaluator(w1=0.4, w2=0.3, w3=0.3)
         
-        # Banco de modificadores estéticos y descriptores para mutaciones
         self.modifiers_pool = [
             "artstation trending", "8k resolution", "unreal engine 5",
             "octane render", "dramatic lighting", "hyperrealistic",
@@ -127,11 +115,10 @@ class GeneticPromptOptimizer:
             "photorealistic", "soft focus", "vibrant colors", "volumetric fog"
         ]
 
-        # Inicialización de población usando el dataset proporcionado
-        self.population = random.sample(seed_prompts, min(population_size, len(seed_prompts)))
+        self.initial_prompts = random.sample(seed_prompts, min(population_size, len(seed_prompts)))
+        self.population = list(self.initial_prompts)
 
     def crossover(self, parent1, parent2):
-        """Cruzamiento en nivel de frases/descriptores (tokens separados por coma)."""
         if random.random() > self.crossover_rate:
             return parent1, parent2
 
@@ -150,7 +137,6 @@ class GeneticPromptOptimizer:
         return ", ".join(child1_tokens), ", ".join(child2_tokens)
 
     def mutate(self, prompt):
-        """Operador de mutación: sustitución, eliminación o adición de descriptores."""
         if random.random() > self.mutation_rate:
             return prompt
 
@@ -173,7 +159,6 @@ class GeneticPromptOptimizer:
         return ", ".join(tokens)
 
     def tournament_selection(self, evaluated_pop, k=3):
-        """Selección por Torneo."""
         selected = random.sample(evaluated_pop, k)
         selected.sort(key=lambda x: x["metrics"]["fitness"], reverse=True)
         return selected[0]["prompt"]
@@ -182,15 +167,19 @@ class GeneticPromptOptimizer:
         print(f"--- Iniciando Bucle Evolutivo ({num_generations} Generaciones) ---\n")
 
         history = []
+        initial_eval = []
+
+        # Evaluar la población inicial (Gen 0)
+        for p in self.initial_prompts:
+            m = self.evaluator.evaluate(p)
+            initial_eval.append({"prompt": p, "metrics": m})
 
         for gen in range(num_generations):
-            # 1. Evaluación de la población
             evaluated_pop = []
             for prompt in self.population:
                 metrics = self.evaluator.evaluate(prompt)
                 evaluated_pop.append({"prompt": prompt, "metrics": metrics})
 
-            # Ordenar por Fitness descendente
             evaluated_pop.sort(key=lambda x: x["metrics"]["fitness"], reverse=True)
             
             best_ind = evaluated_pop[0]
@@ -198,19 +187,21 @@ class GeneticPromptOptimizer:
 
             print(f"Gen [{gen+1}/{num_generations}] | Mejor Fitness: {best_ind['metrics']['fitness']:.4f} | Promedio: {avg_fitness:.4f}")
             print(f"  -> Mejor Prompt: '{best_ind['prompt'][:80]}...'")
-            print(f"  -> [CLIP: {best_ind['metrics']['clip_score']:.2f} | Estética: {best_ind['metrics']['aesthetic_score']:.2f} | D Fractal: {best_ind['metrics']['fractal_D']:.2f}]\n")
 
             history.append({
                 "generation": gen + 1,
                 "best_prompt": best_ind["prompt"],
                 "best_fitness": best_ind["metrics"]["fitness"],
-                "avg_fitness": avg_fitness
+                "avg_fitness": avg_fitness,
+                "clip_score": best_ind["metrics"]["clip_score"],
+                "aesthetic_score": best_ind["metrics"]["aesthetic_score"],
+                "fractal_D": best_ind["metrics"]["fractal_D"]
             })
 
-            # 2. Elitismo: Conservar los 2 mejores
+            # Elitismo: Conservar los 2 mejores
             new_population = [evaluated_pop[0]["prompt"], evaluated_pop[1]["prompt"]]
 
-            # 3. Reproducción (Cruce + Mutación)
+            # Reproducción (Cruce + Mutación)
             while len(new_population) < self.population_size:
                 p1 = self.tournament_selection(evaluated_pop)
                 p2 = self.tournament_selection(evaluated_pop)
@@ -226,31 +217,98 @@ class GeneticPromptOptimizer:
 
             self.population = new_population
 
-        return pd.DataFrame(history)
+        return pd.DataFrame(history), initial_eval, evaluated_pop
+
 
 # ==========================================
-# 4. EJECUCIÓN PRINCIPAL CON RUTAS RELATIVAS
+# 4. DESPLIEGUE VISUAL Y EXPORTACIÓN EN CARPETA
+# ==========================================
+
+def plot_and_export_results(df_results, initial_eval, final_eval, output_folder):
+    # 1. Cálculo del Análisis Comparativo de Mejora
+    initial_best_fitness = max([e['metrics']['fitness'] for e in initial_eval])
+    initial_avg_fitness = np.mean([e['metrics']['fitness'] for e in initial_eval])
+    
+    final_best_fitness = df_results['best_fitness'].iloc[-1]
+    final_avg_fitness = df_results['avg_fitness'].iloc[-1]
+
+    mejora_best = ((final_best_fitness - initial_best_fitness) / initial_best_fitness) * 100
+    mejora_avg = ((final_avg_fitness - initial_avg_fitness) / initial_avg_fitness) * 100
+
+    print("\n" + "="*50)
+    print("      ANÁLISIS COMPARATIVO DE MEJORA")
+    print("="*50)
+    print(f"Fitness Máximo Inicial:   {initial_best_fitness:.4f}")
+    print(f"Fitness Máximo Final:     {final_best_fitness:.4f}")
+    print(f"Mejora Fitness Máximo:    {mejora_best:+.2f}%\n")
+    print(f"Fitness Promedio Inicial: {initial_avg_fitness:.4f}")
+    print(f"Fitness Promedio Final:   {final_avg_fitness:.4f}")
+    print(f"Mejora Fitness Promedio:  {mejora_avg:+.2f}%")
+    print("="*50)
+
+    # 2. Exportar Excel dentro de la carpeta resultados/
+    excel_path = os.path.join(output_folder, 'resultados_optimizacion_prompts.xlsx')
+    
+    df_comparison = pd.DataFrame({
+        'Prompt_Original': [e['prompt'] for e in initial_eval],
+        'Fitness_Original': [e['metrics']['fitness'] for e in initial_eval],
+        'Prompt_Evolucionado': [e['prompt'] for e in final_eval],
+        'Fitness_Evolucionado': [e['metrics']['fitness'] for e in final_eval],
+    })
+    df_comparison['Mejora_Porcentual (%)'] = ((df_comparison['Fitness_Evolucionado'] - df_comparison['Fitness_Original']) / df_comparison['Fitness_Original']) * 100
+
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        df_results.to_excel(writer, sheet_name='Evolucion_Por_Generacion', index=False)
+        df_comparison.to_excel(writer, sheet_name='Analisis_Comparativo', index=False)
+
+    print(f"[+] Excel guardado en: '{excel_path}'\n")
+
+    # 3. Muestra la gráfica en pantalla (Sin Guardar en Disco)
+    plt.figure(figsize=(9, 5))
+    plt.plot(df_results['generation'], df_results['best_fitness'], marker='o', label='Mejor Fitness', color='#1f77b4', linewidth=2)
+    plt.plot(df_results['generation'], df_results['avg_fitness'], marker='s', label='Fitness Promedio', color='#ff7f0e', linestyle='--', linewidth=2)
+    
+    plt.title('Evolución del Fitness por Generación (Algoritmo Genético)', fontsize=12, fontweight='bold')
+    plt.xlabel('Generación', fontsize=10)
+    plt.ylabel('Score de Fitness Total', fontsize=10)
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend(loc='lower right')
+    plt.tight_layout()
+    
+    plt.show()
+
+
+# ==========================================
+# 5. EJECUCIÓN PRINCIPAL CON BÚSQUEDA AUTOMÁTICA
 # ==========================================
 
 if __name__ == "__main__":
-    # Rutas relativas a la carpeta actual donde se ubican los datasets
-    train_path = "./train.csv"
-    test_path = "./test.csv"
+    def find_file(filename, search_directory):
+        for root, dirs, files in os.walk(search_directory):
+            if filename in files:
+                return os.path.join(root, filename)
+        return None
 
-    # Si los CSV están en una subcarpeta llamada 'TPIntegrador', usa:
-    # train_path = "TPIntegrador/train.csv"
-    # test_path = "TPIntegrador/test.csv"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.abspath(os.path.join(script_dir, ".."))
 
-    # Cargar datasets
+    # Crear la carpeta 'resultados' en el directorio del script si no existe
+    results_dir = os.path.join(script_dir, "resultados")
+    os.makedirs(results_dir, exist_ok=True)
+
+    train_path = find_file('train.csv', base_dir)
+    test_path = find_file('test.csv', base_dir)
+
+    if not train_path or not test_path:
+        raise FileNotFoundError(
+            f"No se encontraron 'train.csv' o 'test.csv' dentro de '{base_dir}'."
+        )
+
     df_train = pd.read_csv(train_path)
     df_test = pd.read_csv(test_path)
 
-    # Combinar y limpiar los prompts para formar la población inicial
     all_prompts = pd.concat([df_train['Prompt'], df_test['Prompt']]).dropna().str.strip().tolist()
 
-    print(f"Población inicial cargada correctamente desde los datasets ({len(all_prompts)} prompts totales).")
-
-    # Instanciar y ejecutar el optimizador evolutivo
     optimizer = GeneticPromptOptimizer(
         seed_prompts=all_prompts,
         population_size=15,
@@ -258,9 +316,7 @@ if __name__ == "__main__":
         crossover_rate=0.8
     )
 
-    df_results = optimizer.run(num_generations=5)
+    df_results, initial_eval, final_eval = optimizer.run(num_generations=5)
     
-    # Guardar reporte final con ruta relativa
-    output_path = "./resultados_optimizacion_prompts.csv"
-    df_results.to_csv(output_path, index=False)
-    print(f"Optimización completada. Resultados guardados en '{output_path}'.")
+    # Exportar Excel a 'resultados/' y mostrar gráfico en pantalla
+    plot_and_export_results(df_results, initial_eval, final_eval, results_dir)
