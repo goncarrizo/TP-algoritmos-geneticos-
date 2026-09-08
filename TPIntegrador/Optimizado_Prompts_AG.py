@@ -4,6 +4,10 @@ import numpy as np
 import pandas as pd
 import cv2
 import matplotlib.pyplot as plt
+from PIL import Image
+import torch
+from transformers import CLIPProcessor, CLIPModel
+from diffusers import StableDiffusionPipeline
 
 # ==========================================
 # 1. MÓDULO FRACTAL: BOX-COUNTING Y GAUSSIANA
@@ -49,35 +53,93 @@ def gaussian_fractal_score(D, D_opt=1.4, sigma=0.3):
 
 
 # ==========================================
-# 2. MÓDULO DE EVALUACIÓN Y FITNESS
+# 2. MÓDULO DE EVALUACIÓN Y GENERACIÓN REAL
 # ==========================================
 
 class Evaluator:
     def __init__(self, w1=0.4, w2=0.3, w3=0.3):
         self.w1 = w1  # Peso Coherencia CLIP C(p)
-        self.w2 = w2  # Peso Estética LAION E(p)
+        self.w2 = w2  # Peso Estética E(p)
         self.w3 = w3  # Peso Fractal F_fractal(p)
         self.cache = {}
 
-    def generate_image_mock(self, prompt):
-        """Generador simulado para pruebas locales sin GPU."""
-        np.random.seed(abs(hash(prompt)) % (2**32))
-        return np.random.randint(0, 256, (512, 512, 3), dtype=np.uint8)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[+] Dispositivo de cómputo detectado: {self.device.upper()}")
 
-    def get_clip_score(self, prompt, image):
-        """Sustituir con la llamada real a CLIP model/processor."""
-        return random.uniform(0.6, 0.95)
+        # 1. Cargar modelo real de generación de imágenes: Stable Diffusion
+        print("[+] Cargando modelo generativo (runwayml/stable-diffusion-v1-5)...")
+        dtype = torch.float16 if self.device == "cuda" else torch.float32
+        
+        self.sd_pipeline = StableDiffusionPipeline.from_pretrained(
+            "runwayml/stable-diffusion-v1-5", 
+            torch_dtype=dtype
+        ).to(self.device)
 
-    def get_laion_aesthetic_score(self, image):
-        """Sustituir con la llamada real al modelo LAION Aesthetic Predictor."""
-        return random.uniform(0.5, 0.9)
+        # Desactivar logs innecesarios de diffusers
+        self.sd_pipeline.set_progress_bar_config(disable=True)
+
+        # 2. Cargar modelo real de evaluación semántica: CLIP
+        print("[+] Cargando modelo evaluador CLIP (openai/clip-vit-base-patch32)...")
+        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device)
+        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+    def generate_image_real(self, prompt):
+        """
+        GENERACIÓN REAL: Inferencia en la red neuronal de Stable Diffusion
+        para sintetizar la imagen directamente desde el texto.
+        """
+        # Ajustar resolución y pasos según el dispositivo para optimizar velocidad
+        steps = 20 if self.device == "cuda" else 8
+        width = 512 if self.device == "cuda" else 256
+        height = 512 if self.device == "cuda" else 256
+
+        image = self.sd_pipeline(
+            prompt=prompt, 
+            num_inference_steps=steps, 
+            height=height, 
+            width=width
+        ).images[0]
+
+        return np.array(image)
+
+    def get_clip_score(self, prompt, image_array):
+        """
+        EVALUACIÓN REAL: Similitud Coseno entre Prompt e Imagen generada.
+        """
+        pil_image = Image.fromarray(image_array)
+
+        inputs = self.clip_processor(
+            text=[prompt], 
+            images=pil_image, 
+            return_tensors="pt", 
+            padding=True,
+            truncation=True
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.clip_model(**inputs)
+            image_embeds = outputs.image_embeds / outputs.image_embeds.norm(dim=-1, keepdim=True)
+            text_embeds = outputs.text_embeds / outputs.text_embeds.norm(dim=-1, keepdim=True)
+            similarity = torch.matmul(text_embeds, image_embeds.T).item()
+
+        return float(max(0.0, min(1.0, (similarity + 1) / 2)))
+
+    def get_laion_aesthetic_score(self, image_array):
+        """
+        Estimador de la varianza del Laplaciano para medir la nitidez/detalle técnico.
+        """
+        gray = cv2.cvtColor(image_array, cv2.COLOR_RGB2GRAY)
+        variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+        return float(1 / (1 + np.exp(-variance / 1000)))
 
     def evaluate(self, prompt):
         if prompt in self.cache:
             return self.cache[prompt]
 
-        image = self.generate_image_mock(prompt)
+        # 1. Generación REAL de la imagen
+        image = self.generate_image_real(prompt)
 
+        # 2. Métricas reales
         c_p = self.get_clip_score(prompt, image)
         e_p = self.get_laion_aesthetic_score(image)
         
@@ -102,7 +164,7 @@ class Evaluator:
 # ==========================================
 
 class GeneticPromptOptimizer:
-    def __init__(self, seed_prompts, population_size=20, mutation_rate=0.25, crossover_rate=0.7):
+    def __init__(self, seed_prompts, population_size=10, mutation_rate=0.25, crossover_rate=0.7):
         self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
@@ -163,8 +225,8 @@ class GeneticPromptOptimizer:
         selected.sort(key=lambda x: x["metrics"]["fitness"], reverse=True)
         return selected[0]["prompt"]
 
-    def run(self, num_generations=10):
-        print(f"--- Iniciando Bucle Evolutivo ({num_generations} Generaciones) ---\n")
+    def run(self, num_generations=5):
+        print(f"\n--- Iniciando Bucle Evolutivo ({num_generations} Generaciones) ---\n")
 
         history = []
         initial_eval = []
@@ -225,7 +287,6 @@ class GeneticPromptOptimizer:
 # ==========================================
 
 def plot_and_export_results(df_results, initial_eval, final_eval, output_folder):
-    # 1. Cálculo del Análisis Comparativo de Mejora
     initial_best_fitness = max([e['metrics']['fitness'] for e in initial_eval])
     initial_avg_fitness = np.mean([e['metrics']['fitness'] for e in initial_eval])
     
@@ -246,7 +307,7 @@ def plot_and_export_results(df_results, initial_eval, final_eval, output_folder)
     print(f"Mejora Fitness Promedio:  {mejora_avg:+.2f}%")
     print("="*50)
 
-    # 2. Exportar Excel dentro de la carpeta resultados/
+    # Exportar Excel dentro de resultados/
     excel_path = os.path.join(output_folder, 'resultados_optimizacion_prompts.xlsx')
     
     df_comparison = pd.DataFrame({
@@ -261,14 +322,14 @@ def plot_and_export_results(df_results, initial_eval, final_eval, output_folder)
         df_results.to_excel(writer, sheet_name='Evolucion_Por_Generacion', index=False)
         df_comparison.to_excel(writer, sheet_name='Analisis_Comparativo', index=False)
 
-    print(f"[+] Excel guardado en: '{excel_path}'\n")
+    print(f"[+] Archivo Excel guardado correctamente en: '{excel_path}'\n")
 
-    # 3. Muestra la gráfica en pantalla (Sin Guardar en Disco)
+    # Muestra la gráfica en pantalla (Sin Guardar en Disco)
     plt.figure(figsize=(9, 5))
     plt.plot(df_results['generation'], df_results['best_fitness'], marker='o', label='Mejor Fitness', color='#1f77b4', linewidth=2)
     plt.plot(df_results['generation'], df_results['avg_fitness'], marker='s', label='Fitness Promedio', color='#ff7f0e', linestyle='--', linewidth=2)
     
-    plt.title('Evolución del Fitness por Generación (Algoritmo Genético)', fontsize=12, fontweight='bold')
+    plt.title('Evolución del Fitness por Generación (Pipeline Real de Generación y CLIP)', fontsize=11, fontweight='bold')
     plt.xlabel('Generación', fontsize=10)
     plt.ylabel('Score de Fitness Total', fontsize=10)
     plt.grid(True, linestyle=':', alpha=0.6)
@@ -292,7 +353,6 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.abspath(os.path.join(script_dir, ".."))
 
-    # Crear la carpeta 'resultados' en el directorio del script si no existe
     results_dir = os.path.join(script_dir, "resultados")
     os.makedirs(results_dir, exist_ok=True)
 
@@ -311,12 +371,11 @@ if __name__ == "__main__":
 
     optimizer = GeneticPromptOptimizer(
         seed_prompts=all_prompts,
-        population_size=15,
+        population_size=10,
         mutation_rate=0.3,
         crossover_rate=0.8
     )
 
     df_results, initial_eval, final_eval = optimizer.run(num_generations=5)
     
-    # Exportar Excel a 'resultados/' y mostrar gráfico en pantalla
     plot_and_export_results(df_results, initial_eval, final_eval, results_dir)
